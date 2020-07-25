@@ -10,7 +10,7 @@ pafy.set_api_key(os.environ['GOOGLE_API_KEY'])
 class Youtube:
 
     @staticmethod
-    def search(query: str, results: int = 10) -> List[str]:
+    def search(query: str, results: int = 4) -> List[str]:
         def extract_url(result):
             return f"https://www.youtube.com{result['url_suffix']}"
         results = YoutubeSearch(query, max_results=results).to_json()

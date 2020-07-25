@@ -3,10 +3,22 @@ from pocketsphinx.pocketsphinx import Decoder
 from commander import Commander
 from tts import TTS
 import os
-from queue import Queue
+from queue import Queue, Empty
+import time
+import pyaudio
+
+
+def list_inputs():
+    p = pyaudio.PyAudio()
+    info = p.get_host_api_info_by_index(0)
+    numdevices = info.get('deviceCount')
+    for i in range(0, numdevices):
+        if (p.get_device_info_by_host_api_device_index(0, i).get('maxInputChannels')) > 0:
+            print("Input Device id ", i, " - ", p.get_device_info_by_host_api_device_index(0, i).get('name'))
+
 
 keywords = [
-    ("okay google", 1e-4)
+    ("okay google", 1e-3)
 ]
 
 
@@ -51,23 +63,32 @@ class VoiceRecognition:
         print("Listening for command...")
         try:
             with sr.Microphone() as source:
-                audio_data = self.r.listen(source)
+                audio_data = self.r.listen(source, timeout=10)
                 command: str = self.r.recognize_google(
                     audio_data, key=os.environ['GOOGLE_API_KEY']).lower()
                 print(f"Heard command: '{command}'")
                 split_command = command.split(' ')
-                if split_command[0] == 'play':
-                    self.tts_engine.say("Playing song")
-                    if len(split_command) == 1:
-                        self.commander.pause_song()
+                if 'next' in command and 'song' in command:
+                    self.commander.next_song()
+                elif 'last' in command and 'song' in command:
+                    self.commander.previous_song()
+                elif split_command[0] == 'play':
+                    if 'spotify' in command and 'songs' in command:
+                        self.tts_engine.say("Playing your spotify songs")
+                        self.commander.play_playlist('liked songs')
                     else:
-                        self.commander.play_song(query=' '.join(split_command[1:]))
+                        self.tts_engine.say("Playing song")
+                        if len(split_command) == 1:
+                            self.commander.resume_song()
+                        else:
+                            self.commander.play_song(query=' '.join(split_command[1:]))
                 elif split_command[0] == 'pause' or split_command[0] == 'stop':
                     self.tts_engine.say("Pausing song")
                     self.commander.pause_song()
         except sr.UnknownValueError:
             print("Oops! Didn't catch that")
             self.tts_engine.say("Oops! Didn't catch that")
+        print('over')
 
     def start_recognizer(self):
         with sr.Microphone() as source:
@@ -76,10 +97,15 @@ class VoiceRecognition:
             print(self.r.energy_threshold)
         self.r.dynamic_energy_threshold = False
         # self.r.energy_threshold = 800
+        # Runs in a separate thread
         self.r.listen_in_background(sr.Microphone(), self.listen_for_hotword)
-        while True:
-            self.listen_command_queue.get(block=True)
+
+    def loop(self):
+        try:
+            self.listen_command_queue.get(block=False)
 
             self.listening_for_command = True
             self.listen_for_command()
             self.listening_for_command = False
+        except Empty:
+            pass

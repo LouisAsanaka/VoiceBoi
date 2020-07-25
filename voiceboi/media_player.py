@@ -1,13 +1,27 @@
 import vlc
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 
 class MediaPlayer:
 
     def __init__(self):
         # i = vlc.Instance('--verbose 9')
-        self.i = vlc.Instance()
+        self.i: vlc.Instance = vlc.Instance()
         self.player: vlc.MediaPlayer = self.i.media_player_new()
+        self.set_output_device(b'{0.0.0.00000000}.{2aff3d82-88ab-4e00-ab49-b97253d27712}')
+        self.list_player: vlc.MediaListPlayer = self.i.media_list_player_new()
+        self.list_player.set_media_player(self.player)
+        self.callbacks: Dict = {}
+        print(self.list_output_devices())
+
+    def register_callback(self, event_type, callback_):
+        self.callbacks[event_type] = callback_
+        event_manager: vlc.EventManager = self.list_player.event_manager()
+        event_manager.event_attach(event_type, callback_)
+
+    def unregister_callback(self, event_type):
+        event_manager: vlc.EventManager = self.list_player.event_manager()
+        event_manager.event_detach(event_type)
 
     def list_output_devices(self) -> List[Tuple[bytes, bytes]]:
         """
@@ -26,6 +40,9 @@ class MediaPlayer:
         vlc.libvlc_audio_output_device_list_release(mods)
         return devices
 
+    def get_player_state(self) -> vlc.State:
+        return self.player.get_state()
+
     def set_output_device(self, device: bytes):
         """
         Sets the audio output device for this media player.
@@ -42,7 +59,21 @@ class MediaPlayer:
         :param url: an audio URL
         :return: None
         """
-        self.player.set_mrl(url)
+        self.set_playlist(self.i.media_list_new([url]))
+
+    def reinitialize_player(self):
+        for event_type in self.callbacks.keys():
+            self.unregister_callback(event_type)
+        self.list_player.release()
+        self.list_player = self.i.media_list_player_new()
+        self.list_player.set_media_player(self.player)
+        for event_type, callback in self.callbacks.items():
+            self.register_callback(event_type, callback)
+
+    def set_playlist(self, media_list: vlc.MediaList):
+        if media_list.count() == 0:
+            return
+        self.list_player.set_media_list(media_list)
 
     def get_volume(self) -> int:
         return self.player.audio_get_volume()
@@ -58,7 +89,15 @@ class MediaPlayer:
 
         :return: None
         """
-        self.player.play()
+        self.set_volume(80)
+        self.list_player.play()
+
+    def play_at_index(self, index: int):
+        self.set_volume(80)
+        self.list_player.play_item_at_index(index)
+
+    def resume(self):
+        self.list_player.set_pause(0)
 
     def pause(self):
         """
@@ -66,4 +105,10 @@ class MediaPlayer:
 
         :return: None
         """
-        self.player.pause()
+        self.list_player.set_pause(1)
+
+    def next(self) -> int:
+        return self.list_player.next()
+
+    def previous(self) -> int:
+        return self.list_player.previous()
